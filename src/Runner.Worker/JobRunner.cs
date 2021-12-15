@@ -25,6 +25,7 @@ namespace GitHub.Runner.Worker
     public sealed class JobRunner : RunnerService, IJobRunner
     {
         private IJobServerQueue _jobServerQueue;
+        private RunnerSettings _runnerSettings;
         private ITempDirectoryManager _tempDirectoryManager;
 
         public async Task<TaskResult> RunAsync(Pipelines.AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken)
@@ -108,8 +109,8 @@ namespace GitHub.Runner.Worker
                 jobContext.SetRunnerContext("os", VarUtil.OS);
                 jobContext.SetRunnerContext("arch", VarUtil.OSArchitecture);
 
-                var runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
-                jobContext.SetRunnerContext("name", runnerSettings.AgentName);
+                _runnerSettings = HostContext.GetService<IConfigurationStore>().GetSettings();
+                jobContext.SetRunnerContext("name", _runnerSettings.AgentName);
 
                 string toolsDirectory = HostContext.GetDirectory(WellKnownDirectory.Tools);
                 Directory.CreateDirectory(toolsDirectory);
@@ -208,6 +209,53 @@ namespace GitHub.Runner.Worker
         {
             jobContext.Debug($"Finishing: {message.JobDisplayName}");
             TaskResult result = jobContext.Complete(taskResult);
+
+            if (_runnerSettings.DisableUpdate == true)
+            {
+                try
+                {
+                    var currnetVersion = new PackageVersion(BuildConstants.RunnerPackage.Version);
+                    ServiceEndpoint systemConnection = message.Resources.Endpoints.Single(x => string.Equals(x.Name, WellKnownServiceEndpointNames.SystemVssConnection, StringComparison.OrdinalIgnoreCase));
+                    VssCredentials serverCredential = VssUtil.GetVssCredential(systemConnection);
+
+                    var runnerServer = HostContext.GetService<IRunnerServer>();
+                    await runnerServer.ConnectAsync(systemConnection.Url, serverCredential);
+                    var serverPackages = await runnerServer.GetPackagesAsync("agent", BuildConstants.RunnerPackage.PackageName, 5, false, CancellationToken.None);
+                    if (serverPackages.Count > 0)
+                    {
+                        serverPackages = serverPackages.OrderByDescending(x => x.Version).ToList();
+                        Trace.Info($"Newer packages {StringUtil.ConvertToJson(serverPackages.Select(x => x.Version.ToString()))}");
+
+                        var warnOnFailedJob = false; // any minor/patch version behind.
+                        var warnOnOldRunnerVersion = false; // >= 2 minor version behind
+                        if (serverPackages.Any(x => x.Version.CompareTo(currnetVersion) > 0))
+                        {
+                            Trace.Info($"Current runner version {currnetVersion} is behind the latest runner version {serverPackages[0].Version}.");
+                            warnOnFailedJob = true;
+                        }
+
+                        if (serverPackages.Where(x => x.Version.Minor > currnetVersion.Minor).Count() > 1)
+                        {
+                            Trace.Info($"Current runner version {currnetVersion} is way behind the latest runner version {serverPackages[0].Version}.");
+                            warnOnOldRunnerVersion = true;
+                        }
+
+                        if (result == TaskResult.Failed && warnOnFailedJob)
+                        {
+                            jobContext.Warning($"The job failure might caused by an out of date runner (current runner version is {currnetVersion}). Please update runner to latest version {serverPackages[0].Version} {serverPackages[0].DownloadUrl}.");
+                        }
+                        else if (warnOnOldRunnerVersion)
+                        {
+                            jobContext.Warning($"The current runner version is {currnetVersion}. Please update runner to latest version {serverPackages[0].Version} {serverPackages[0].DownloadUrl}.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Ignore any error since suggest runner update is best effort.
+                    Trace.Error($"Caught exception during runner version check: {ex}");
+                }
+            }
 
             try
             {
