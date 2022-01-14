@@ -1,5 +1,5 @@
 #!/bin/bash
-
+echo 🔥🔥🔥 New run-helper-sh started
 # Validate not sudo
 user_id=`id -u`
 if [ $user_id -eq 0 -a -z "$RUNNER_ALLOW_RUNASROOT" ]; then
@@ -26,8 +26,10 @@ safe_sleep() {
     fi
 }
 
+echo 🔥🔥🔥 run-helper Starting listener 
 bin/Runner.Listener run $*
 returnCode=$?
+echo "🔥🔥🔥 run-helper listener exited with $returnCode"
 if [[ $returnCode == 0 ]]; then
     echo "Runner listener exit with 0 return code, stop the service, no retry needed."
     exit 0
