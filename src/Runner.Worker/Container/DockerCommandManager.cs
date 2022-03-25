@@ -399,7 +399,8 @@ namespace GitHub.Runner.Worker.Container
             {
                 throw new NotSupportedException("Container operations are only supported on Linux runners");
             }
-            return await processInvoker.ExecuteAsync(
+
+            var result = await processInvoker.ExecuteAsync(
                 workingDirectory: context.GetGitHubContext("workspace"),
                 fileName: DockerPath,
                 arguments: arg,
@@ -408,6 +409,21 @@ namespace GitHub.Runner.Worker.Container
                 outputEncoding: null,
                 killProcessOnCancel: false,
                 cancellationToken: cancellationToken);
+
+            arg = $"{command} -u root -e HOST_OWNERUID=1000 -e HOST_OWNERGID=1000 -v \"/home/nikola/Projects/work/runner/_layout/wn\":\"/cleanup/scripts\" {options} bash /cleanup/scripts/cleanup.sh".Trim();
+            processInvoker = HostContext.CreateService<IProcessInvoker>();
+            processInvoker.OutputDataReceived += stdoutDataReceived;
+            processInvoker.ErrorDataReceived += stderrDataReceived;
+            await processInvoker.ExecuteAsync(
+                workingDirectory: context.GetGitHubContext("workspace"),
+                fileName: DockerPath,
+                arguments: arg,
+                environment: environment,
+                requireExitCodeZero: false,
+                outputEncoding: null,
+                killProcessOnCancel: false,
+                cancellationToken: cancellationToken);
+            return result;
         }
 
         private async Task<int> ExecuteDockerCommandAsync(IExecutionContext context, string command, string options, string workingDirectory, CancellationToken cancellationToken = default(CancellationToken))
