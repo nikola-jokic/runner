@@ -17,6 +17,12 @@ namespace GitHub.DistributedTask.Pipelines.ObjectTemplating
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static class PipelineTemplateConverter
     {
+        public static IDictionary<string, string> ConvertToDefaults(MappingToken token)
+        {
+            var result = new Dictionary<string, string>();
+
+            return result;
+        }
         public static List<Step> ConvertToSteps(
             TemplateContext context,
             TemplateToken steps)
