@@ -63,6 +63,7 @@ namespace GitHub.Runner.Worker.Dap
         private volatile DapSessionState _state = DapSessionState.NotStarted;
         private CancellationTokenRegistration? _cancellationRegistration;
         private bool _isFirstStep = true;
+        private bool _welcomeMessageSent;
 
         // Dev Tunnel relay host for remote debugging
         private TunnelRelayTunnelHost _tunnelRelayHost;
@@ -490,6 +491,11 @@ namespace GitHub.Runner.Worker.Dap
                     });
                     Trace.Info("Sent initialized event");
                 }
+
+                if (request.Command == "configurationDone")
+                {
+                    SendWelcomeMessage();
+                }
             }
             catch (Exception ex)
             {
@@ -508,6 +514,7 @@ namespace GitHub.Runner.Worker.Dap
         internal void HandleClientConnected()
         {
             _isClientConnected = true;
+            _welcomeMessageSent = false;
             Trace.Info("Client connected to debug session");
 
             // If we're paused, re-send the stopped event so the new client
@@ -816,6 +823,34 @@ namespace GitHub.Runner.Worker.Dap
                     Output = text
                 }
             });
+        }
+
+        internal void SendWelcomeMessage()
+        {
+            if (_welcomeMessageSent)
+            {
+                return;
+            }
+            _welcomeMessageSent = true;
+
+            var debuggerConfig = _jobContext?.Global?.Debugger;
+            if (debuggerConfig?.OverrideWelcomeMessage == true)
+            {
+                if (!string.IsNullOrEmpty(debuggerConfig.WelcomeMessage))
+                {
+                    SendOutput("console", debuggerConfig.WelcomeMessage);
+                    Trace.Info("Sent custom welcome message");
+                }
+                else
+                {
+                    Trace.Info("Welcome message suppressed by override");
+                }
+            }
+            else
+            {
+                SendOutput("console", DapReplParser.GetGeneralHelp());
+                Trace.Info("Sent default welcome message");
+            }
         }
 
         internal async Task OnStepStartingAsync(IStep step, bool isFirstStep)
