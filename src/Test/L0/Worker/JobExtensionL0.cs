@@ -238,6 +238,54 @@ namespace GitHub.Runner.Common.Tests.Worker
             }
         }
 
+        [Theory]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        [InlineData("read")]
+        [InlineData("none")]
+        [InlineData("write")]
+        [InlineData("write-only")]
+        public async Task InitializeJob_LogsCacheMode_WhenVariableSet(string mode)
+        {
+            using (TestHostContext hc = CreateTestContext())
+            {
+                _jobEc.Global.Variables.Set("actions_cache_mode", mode);
+
+                var jobExtension = new JobExtension();
+                jobExtension.Initialize(hc);
+
+                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>(), It.IsAny<Guid>()))
+                              .Returns(Task.FromResult(new PrepareResult(new List<JobExtensionRunner>(), new Dictionary<Guid, IActionRunner>())));
+
+                await jobExtension.InitializeJob(_jobEc, _message);
+
+                _jobServerQueue.Verify(
+                    x => x.QueueWebConsoleLine(It.IsAny<Guid>(), It.Is<string>(m => m.Contains($"Cache mode: {mode}")), It.IsAny<long?>()),
+                    Times.Once);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Worker")]
+        public async Task InitializeJob_DoesNotLogCacheMode_WhenVariableAbsent()
+        {
+            using (TestHostContext hc = CreateTestContext())
+            {
+                var jobExtension = new JobExtension();
+                jobExtension.Initialize(hc);
+
+                _actionManager.Setup(x => x.PrepareActionsAsync(It.IsAny<IExecutionContext>(), It.IsAny<IEnumerable<Pipelines.JobStep>>(), It.IsAny<Guid>()))
+                              .Returns(Task.FromResult(new PrepareResult(new List<JobExtensionRunner>(), new Dictionary<Guid, IActionRunner>())));
+
+                await jobExtension.InitializeJob(_jobEc, _message);
+
+                _jobServerQueue.Verify(
+                    x => x.QueueWebConsoleLine(It.IsAny<Guid>(), It.Is<string>(m => m.Contains("Cache mode:")), It.IsAny<long?>()),
+                    Times.Never);
+            }
+        }
+
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Worker")]
