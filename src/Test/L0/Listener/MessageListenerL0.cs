@@ -95,6 +95,45 @@ namespace GitHub.Runner.Common.Tests.Listener
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Runner")]
+        public async Task RetriesSessionConflictUntilCancelled()
+        {
+            using (TestHostContext tc = CreateTestContext())
+            using (var tokenSource = new CancellationTokenSource())
+            {
+                int createSessionAttempts = 0;
+
+                _runnerServer
+                    .Setup(x => x.CreateAgentSessionAsync(
+                        _settings.PoolId,
+                        It.Is<TaskAgentSession>(y => y != null),
+                        tokenSource.Token))
+                    .Returns(async () =>
+                    {
+                        createSessionAttempts++;
+                        await Task.Yield();
+                        throw new TaskAgentSessionConflictException("session exists");
+                    });
+
+                _credMgr.Setup(x => x.LoadCredentials(It.IsAny<bool>())).Returns(new VssCredentials());
+                tc.Delaying += (_, _) =>
+                {
+                    if (createSessionAttempts > 8)
+                    {
+                        tokenSource.Cancel();
+                    }
+                };
+
+                MessageListener listener = new();
+                listener.Initialize(tc);
+
+                await Assert.ThrowsAsync<OperationCanceledException>(() => listener.CreateSessionAsync(tokenSource.Token));
+                Assert.True(createSessionAttempts > 8);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Runner")]
         public async Task DeleteSession()
         {
             using (TestHostContext tc = CreateTestContext())

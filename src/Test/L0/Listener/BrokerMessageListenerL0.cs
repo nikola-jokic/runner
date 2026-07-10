@@ -69,6 +69,39 @@ namespace GitHub.Runner.Common.Tests.Listener
         [Fact]
         [Trait("Level", "L0")]
         [Trait("Category", "Runner")]
+        public async Task RetriesSessionConflictUntilLimitReached()
+        {
+            using (TestHostContext tc = CreateTestContext())
+            using (var tokenSource = new CancellationTokenSource())
+            {
+                int createSessionAttempts = 0;
+
+                _brokerServer
+                    .Setup(x => x.CreateSessionAsync(
+                        It.Is<TaskAgentSession>(y => y != null),
+                        tokenSource.Token))
+                    .Returns(async () =>
+                    {
+                        createSessionAttempts++;
+                        await Task.Yield();
+                        throw new TaskAgentSessionConflictException("session exists");
+                    });
+
+                _credMgr.Setup(x => x.LoadCredentials(It.IsAny<bool>())).Returns(new VssCredentials());
+
+                BrokerMessageListener listener = new();
+                listener.Initialize(tc);
+
+                CreateSessionResult result = await listener.CreateSessionAsync(tokenSource.Token);
+
+                Assert.Equal(CreateSessionResult.SessionConflict, result);
+                Assert.Equal(8, createSessionAttempts);
+            }
+        }
+
+        [Fact]
+        [Trait("Level", "L0")]
+        [Trait("Category", "Runner")]
         public async Task HandleAuthMigrationChanged()
         {
             using (TestHostContext tc = CreateTestContext())
@@ -400,7 +433,7 @@ namespace GitHub.Runner.Common.Tests.Listener
                    .Verify(x => x.CreateSessionAsync(
                        It.Is<TaskAgentSession>(y => y != null),
                        tokenSource.Token), Times.Once());
-                
+
                 // Verify LoadSettings was never called
                 _config.Verify(x => x.LoadSettings(), Times.Never());
             }

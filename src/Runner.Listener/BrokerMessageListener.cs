@@ -172,7 +172,7 @@ namespace GitHub.Runner.Listener
                     {
                         _migratedSettingsRetryCount++;
                         Trace.Warning($"Migrated settings retry {_migratedSettingsRetryCount} of {_maxMigratedSettingsRetries}");
-                        
+
                         if (_migratedSettingsRetryCount >= _maxMigratedSettingsRetries)
                         {
                             Trace.Warning("Reached maximum retry attempts for migrated settings. Returning failure to try default settings.");
@@ -188,7 +188,7 @@ namespace GitHub.Runner.Listener
                         if (string.Equals(vssOAuthEx.Error, "invalid_client", StringComparison.OrdinalIgnoreCase))
                         {
                             _term.WriteError("Failed to create a session. The runner registration has been deleted from the server, please re-configure. Runner registrations are automatically deleted for runners that have not connected to the service recently.");
-                            return CreateSessionResult.Failure;
+                            return CreateSessionResult.RunnerRegistrationDeleted;
                         }
 
                         // Check whether we get 401 because the runner registration already removed by the service.
@@ -199,7 +199,7 @@ namespace GitHub.Runner.Listener
                         if (string.Equals(authError, "invalid_client", StringComparison.OrdinalIgnoreCase))
                         {
                             _term.WriteError("Failed to create a session. The runner registration has been deleted from the server, please re-configure. Runner registrations are automatically deleted for runners that have not connected to the service recently.");
-                            return CreateSessionResult.Failure;
+                            return CreateSessionResult.RunnerRegistrationDeleted;
                         }
                     }
 
@@ -469,7 +469,7 @@ namespace GitHub.Runner.Listener
                     if (_sessionCreationExceptionTracker[nameof(TaskAgentSessionConflictException)] * _sessionCreationRetryInterval.TotalSeconds >= _sessionConflictRetryLimit.TotalSeconds)
                     {
                         Trace.Info("The session conflict exception have reached retry limit.");
-                        _term.WriteError($"Stop retry on SessionConflictException after retried for {_sessionConflictRetryLimit.TotalSeconds} seconds.");
+                        _term.WriteError($"Stopped retrying session conflict exception after {_sessionConflictRetryLimit.TotalSeconds} seconds.");
                         return false;
                     }
                 }
@@ -478,7 +478,7 @@ namespace GitHub.Runner.Listener
                     _sessionCreationExceptionTracker[nameof(TaskAgentSessionConflictException)] = 1;
                 }
 
-                Trace.Info("The session conflict exception haven't reached retry limit.");
+                Trace.Info("The session conflict exception is retryable.");
                 return true;
             }
             else if (ex is VssOAuthTokenRequestException && ex.Message.Contains("Current server time is"))
